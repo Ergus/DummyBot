@@ -9,8 +9,9 @@ class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
 
     The exposed functions will be effective wrappers to the API call
-    functions, but in some cases it adds memoization while precompute
-    or use stored values.
+    functions, but in some cases it caches values, or parallelize
+    requests. The exposes function should take care of concurrency
+    protection.
 
     """
 
@@ -46,7 +47,7 @@ class AlpacaAPIWrapper:
                 f"Cash: {self.cash}"
 
     def update_prices(self):
-        '''This function updated self.last_prices information.
+        """This function updated self.last_prices information.
 
         The function is called in a pooling service and uses the
         thread-pool (executor) to request the trades, quotes and vars
@@ -77,7 +78,8 @@ class AlpacaAPIWrapper:
         TODO: FWIU bars information is only updated every minute, so,
         probably I can create a mechanism to avoid that requests to
         once per minute only.
-        '''
+
+        """
 
         items: list(str) = ['trades', 'quotes', 'bars']
 
@@ -109,6 +111,12 @@ class AlpacaAPIWrapper:
             self.last_prices = last_prices
 
     def update_positions(self):
+        """This function updates the current position information.
+
+        It could be called as a pooling service only after some orders
+        has been submitted.
+
+        """
 
         positions = self.client.get_positions()
 
@@ -123,10 +131,15 @@ class AlpacaAPIWrapper:
 
 
     def update_cash(self):
+        """I consider cash also a position.
+
+        So the same comment also applies.
+
+        """
         self.cash = float(self.client.get_account().get("cash"))
 
     def manage_buy_signal(self, ticker):
-
+        """Function to execute buy operations"""
         ticket_price_info = {}
         with self.lock_price:
             ticket_price_info = self.last_prices.get(ticker).get("quote")
@@ -137,6 +150,7 @@ class AlpacaAPIWrapper:
 
 
     def manage_sell_signal(self, ticker):
+        """Function to execute sell operations"""
         self.lock_price.acquire()
         position = self.positions.get(ticker)
         qty = position.get("qty") if position else 0

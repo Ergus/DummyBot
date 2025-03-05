@@ -19,6 +19,16 @@ signal_queue = queue.Queue()
 
 
 def redis_reader():
+    '''This is the thread that is constantly blocked waiting for new signals.
+
+    When a signal arrives the information is inserted in the fifo
+    signal_queue quickly in order to check for new messages immediately.
+
+    After that a worker will process the signal as soon as
+    possible. As there may be many workers, in case multiple signals
+    arrive in a short period of time, they may be processed in
+    parallel by the workers.
+    '''
     redis_client = redis.Redis(
         host='redis',
         port=6379,
@@ -56,6 +66,15 @@ def redis_reader():
 # ===================================
 
 def pooling(client: alpaca_api_wrapper.AlpacaAPIWrapper):
+    """Pooling service function
+
+    This pooling service is intended to keep the prices information
+    more or less up to date.
+    The idea behind is to avoid doing extra requests in the moment we
+    receive a signal. When the worker receives a signal it uses the
+    prices information that is already cached from the most recent
+    request.
+    """
     logger = logging.getLogger('worker')
     logger.info("Pooling...")
 
@@ -67,7 +86,6 @@ def pooling(client: alpaca_api_wrapper.AlpacaAPIWrapper):
 
         if (elapsed := time.perf_counter() - tstart) < pooltime:
             # TODO: use elapsed time to collect some statistics.
-
             # Use elapsed time for more acurated timer
             time.sleep(pooltime - elapsed)
         else:
@@ -75,6 +93,16 @@ def pooling(client: alpaca_api_wrapper.AlpacaAPIWrapper):
 
 
 def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper):
+    '''This is the key strategic function
+
+    This function receives a signal from the queue set by the
+    redis_reader. There could be multiple instances of this class.
+    The function uses the prices information updated in the last
+    pooling loop, needing to take the prices lock very briefly.
+    But remember, there is a GIL!!!
+
+    '''
+
     logger = logging.getLogger('worker')
     logger.info("Waiting for signals...")
 
@@ -91,7 +119,13 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper):
 
 
 def RunBot():
-    # Create a single threadpool at the module/class level
+    '''This is the Bot function
+
+    The function uses a thread pool to avoid even the thread creation
+    (system call) overhead. The number of threads is limited to 5 not
+    because I use 3 threads to update prices.
+
+    '''
     with ThreadPoolExecutor(max_workers=5) as executor:
 
         client = alpaca_api_wrapper.AlpacaAPIWrapper(
@@ -100,9 +134,6 @@ def RunBot():
             ["NVDA"],
             executor
         )
-
-        client.update_positions()
-        client.update_prices()
 
         executor.submit(pooling, client)
         executor.submit(redis_reader)
