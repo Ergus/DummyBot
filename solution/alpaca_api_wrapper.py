@@ -28,7 +28,11 @@ class AlpacaAPIWrapper:
         self.assets = assets
         self.executor = thread_pool
 
+        # The positions and pricess are separated to reduce contention
+        # and not lock too much when updating only one of them
         self.cash = 0
+
+        self.lock_positions = threading.Lock()
         self.positions = {}
 
         # Ideally this needs to be an RWLock
@@ -96,9 +100,12 @@ class AlpacaAPIWrapper:
         for future in concurrent.futures.as_completed(futures):
             results |=  future.result()
 
-        # Perform the reshape in a temporal variable without the lock taken.
-        # Is I detect that this is slow (or that dealing with self.lock_price
-        # is slow) I will use pandas or numpy instead
+        # Perform the reshape in a temporal variable without the lock
+        # taken.  If I detect that this is slow (or that dealing with
+        # self.lock_price is slow) I will use pandas or numpy instead
+        # NOTE: An alternative is to take the lock here, it will
+        # increase contention, but also increases the probability of
+        # using the most recent information.
         last_prices = {
             asset: {
                 item: results.get(item).get(asset) for item in items
@@ -120,14 +127,15 @@ class AlpacaAPIWrapper:
 
         positions = self.client.get_positions()
 
-        self.positions = {
-            position["symbol"]: {
-                "qty": float(position.get("qty_available")),
-                "value": float(position.get("market_value")),
-                "entry": float(position.get("avg_entry_price")),
-                "price": float(position.get("current_price"))
-            } for position in positions if position["symbol"] in self.assets
-        }
+        with self.lock_positions:
+            self.positions = {
+                position["symbol"]: {
+                    "qty": float(position.get("qty_available")),
+                    "value": float(position.get("market_value")),
+                    "entry": float(position.get("avg_entry_price")),
+                    "price": float(position.get("current_price"))
+                } for position in positions if position["symbol"] in self.assets
+            }
 
 
     def update_cash(self):
