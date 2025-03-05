@@ -67,23 +67,30 @@ class AlpacaAPIClient:
         return key_valid and secret_valid
 
 
-    def _make_request(self, method, endpoint, params=None, data=None, timeout=30, is_data=False):
+    def _make_request(self, method, endpoint, **kwargs):
         """Make a request to the Alpaca API with error handling and logging."""
 
-        url = f"{self.data_url if is_data else self.base_url}{endpoint}"
+        # method, endpoint, params=None, data=None, timeout=30, is_data=False
+
+        defaults = {
+            "url": self.base_url,
+            "headers": self.headers,
+            "params": None,
+            "json": None,
+            "timeout": 30,
+        }
+
+        params = {**defaults, **kwargs}
+        params["url"] = f"{params["url"]}{endpoint}"
 
         try:
-            response = requests.request(
-                method=method,
-                url=url,
-                headers=self.headers,
-                params=params,
-                json=data,
-                timeout=timeout
-            )
-
             # Log the request (but not sensitive data)
             self.logger.info(f"Request: {method} {endpoint} {params}")
+
+            response = requests.request(
+                method=method,
+                **params
+            )
 
             # Raise HTTPError for bad status codes
             response.raise_for_status()
@@ -132,7 +139,7 @@ class AlpacaAPIClient:
     def get_positions(self):
         """Get current positions with retry logic for transient errors."""
         try:
-            return self._make_request('GET', '/v2/positions')
+            return self._make_request(method='GET', endpoint='/v2/positions')
         except Exception as e:
             self.logger.error(f"Failed to get positions: {str(e)}")
             return None
@@ -148,7 +155,7 @@ class AlpacaAPIClient:
         }
 
         try:
-            result = self._make_request('POST', '/v2/orders', data=data)
+            result = self._make_request('POST', '/v2/orders', json=data)
             self.logger.info(f"Order placed successfully: {symbol} {side} {qty}")
             return result
         except Exception as e:
@@ -157,7 +164,6 @@ class AlpacaAPIClient:
 
     def get_prices(self, assets, type='trades'):
         """Get latest prices for the assets."""
-
         allowed_values = ['trades', 'quotes', 'bars']
 
         if type not in allowed_values:
@@ -170,10 +176,10 @@ class AlpacaAPIClient:
             return {}
         try:
             return self._make_request(
-                'GET',
-                '/v2/stocks/trades/latest',
+                method='GET',
+                endpoint=f'/v2/stocks/{type}/latest',
                 params=f"symbols={','.join(assets)}",
-                is_data=True
+                url=self.data_url
             )
         except Exception as e:
             self.logger.error(f"Failed to get asset prices: {str(e)}")

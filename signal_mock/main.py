@@ -25,9 +25,15 @@ def is_market_hours() -> bool:
 
 def generate_signal() -> Optional[dict]:
     """Generate a random signal for NVDA"""
+
+    return {
+        "ticker": "NVDA",
+        "direction": random.choice(["b", "s"])
+    }
+    
     if not is_market_hours():
         return None
-    
+
     if random.random() < 0.005:  # 0.5% chance of generating a signal
         return {
             "ticker": "NVDA",
@@ -43,13 +49,14 @@ def main():
         port=REDIS_PORT,
         decode_responses=True
     )
-    
+
      # Delete existing stream if it exists
     redis_client.delete('nvda')
     print("Signal mock service started")
-    
+
     while True:
         signal = generate_signal()
+        print(f"Signal is {signal}")
         if signal:
             # Add signal to Redis stream
             redis_client.xadd(
@@ -57,9 +64,11 @@ def main():
                 signal,
                 maxlen=1000
             )
-            print(f"Signal generated: {signal}")
-        
-        time.sleep(4.5 + random.random() * 0.5)  # Check every second with some randomness
+            print(f"Signal emitted: {signal}")
+
+        sleeptime = 4.5 + random.random() * 0.5
+        print(f"Sleeping for {sleeptime}")
+        time.sleep(sleeptime)  # Check every second with some randomness
 
 if __name__ == "__main__":
     main()

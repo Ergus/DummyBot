@@ -3,7 +3,7 @@ import alpaca_api_client as aaclient
 
 import threading
 import concurrent.futures
-import copy
+import json
 
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
@@ -20,10 +20,7 @@ class AlpacaAPIWrapper:
             api_secret: str,
             thread_pool: concurrent.futures.ThreadPoolExecutor
     ):
-        self.client = aaclient.AlpacaAPIClient(
-            os.getenv("ALPACA_API_KEY"),
-            os.getenv("ALPACA_SECRET_KEY")
-        )
+        self.client = aaclient.AlpacaAPIClient(api_key, api_secret)
         self.assets = set()
 
         self.cash = 0
@@ -40,10 +37,11 @@ class AlpacaAPIWrapper:
         self.executor = thread_pool
 
     def __str__(self):
-        return f"Positions: {self.positions}\n" \
-            f"LastPrices: {self.last_prices}\n" \
-            f"Assets: {self.assets}\n"\
-            f"Cash: {self.cash}"
+        with self.lock_price:
+            return f"Positions: {json.dumps(self.positions, indent=2)}\n" \
+                f"LastPrices: {json.dumps(self.last_prices, indent=2)}\n" \
+                f"Assets: {self.assets}\n"\
+                f"Cash: {self.cash}"
 
     def add_asset(self, symbol: str):
         self.assets.add(symbol)
@@ -89,15 +87,13 @@ class AlpacaAPIWrapper:
 
         # Submit all requests at once
         futures = {
-            self.executor.submit(self.client.get_prices, self.assets, type = item): item
-            for item in items
+            self.executor.submit(self.client.get_prices, self.assets, type = item): item for item in items
         }
 
         # Finalize requests without the lock taken to override atomically at once
-        results = {
-            future.result()
-            for future in concurrent.futures.as_completed(futures)
-        }
+        results = {}
+        for future in concurrent.futures.as_completed(futures):
+            results |=  future.result()
 
         # Perform the reshape in a temporal variable without the lock taken.
         # Is I detect that this is slow (or that dealing with self.lock_price
@@ -113,19 +109,19 @@ class AlpacaAPIWrapper:
         with self.lock_price:
             self.last_prices = last_prices
 
-    def update_positions(self, positions):
+    def update_positions(self):
 
-        if positions is None:
-            positions = self.client.get_positions()
+        positions = self.client.get_positions()
 
-        for position in positions:
-            key = position["symbol"]
-            self.positions[key] = {
+        self.positions = {
+            position["symbol"]: {
                 "qty": float(position.get("qty_available")),
-                "value": float(position.get("market_value"))
-            }
+                "value": float(position.get("market_value")),
+                "entry": float(position.get("avg_entry_price")),
+                "price": float(position.get("current_price"))
+            } for position in positions if position["symbol"] in self.assets
+        }
 
-            self.last_prices[key] = float(position["current_price"])
 
     def update_cash(self):
         self.cash = float(self.client.get_account().get("cash"))
