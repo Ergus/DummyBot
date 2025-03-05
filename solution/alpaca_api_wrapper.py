@@ -25,17 +25,18 @@ class AlpacaAPIWrapper:
 
         self.client = aaclient.AlpacaAPIClient(api_key, api_secret)
         self.assets = assets
+        self.executor = thread_pool
 
         self.cash = 0
-        self.update_cash()
-
         self.positions = {}
-        self.update_positions()
 
         # Ideally this needs to be an RWLock
         self.lock_price = threading.Lock()
         self.last_prices = {}
-        self.executor = thread_pool
+
+        self.update_cash()
+        self.update_positions()
+        self.update_prices()
 
     def __str__(self):
         with self.lock_price:
@@ -80,12 +81,15 @@ class AlpacaAPIWrapper:
 
         items: list(str) = ['trades', 'quotes', 'bars']
 
-        # Submit all requests at once
+        # Submit all requests in parallel. This could work (in spite
+        # bein python) because this is IO
         futures = {
-            self.executor.submit(self.client.get_prices, self.assets, type = item): item for item in items
+            self.executor.submit(self.client.get_prices, self.assets, type = item): item
+            for item in items
         }
 
-        # Finalize requests without the lock taken to override atomically at once
+        # Finalize requests without the lock taken to override
+        # atomically at once
         results = {}
         for future in concurrent.futures.as_completed(futures):
             results |=  future.result()
