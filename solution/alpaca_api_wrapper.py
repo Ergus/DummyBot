@@ -2,6 +2,8 @@ import os
 import alpaca_api_client as aaclient
 
 import threading
+import concurrent.futures
+import copy
 
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
@@ -12,7 +14,12 @@ class AlpacaAPIWrapper:
 
     """
 
-    def __init__(self, api_key, api_secret):
+    def __init__(
+            self,
+            api_key: str,
+            api_secret: str,
+            thread_pool: concurrent.futures.ThreadPoolExecutor
+    ):
         self.client = aaclient.AlpacaAPIClient(
             os.getenv("ALPACA_API_KEY"),
             os.getenv("ALPACA_SECRET_KEY")
@@ -30,7 +37,7 @@ class AlpacaAPIWrapper:
         # Ideally this needs to be an RWLock
         self.lock_price = threading.Lock()
         self.last_prices = {}
-
+        self.executor = thread_pool
 
     def __str__(self):
         return f"Positions: {self.positions}\n" \
@@ -41,18 +48,72 @@ class AlpacaAPIWrapper:
     def add_asset(self, symbol: str):
         self.assets.add(symbol)
 
-    def update_prices(self, prices = None):
+    def update_prices(self):
+        '''This function updated self.last_prices information.
 
-        if prices is None:
-            # This won't scale well when using many assets.
-            
-            prices = self.client.get_prices(self.assets).get("trades")
+        The function is called in a pooling service and uses the
+        thread-pool (executor) to request the trades, quotes and vars
+        information.
 
+        The self.last_prices is shared among all the threads, so it requires
+        lock protection to be modified.
+        This functions perform the request and variable initialization in a
+        temporal variable (out of lock); and only takes the lock to perform
+        the variable reassign.
+
+        This approach guarantees that the lock is taken very shortly
+        and the update operation is atomic (in the ACID sense).
+
+        The trade off if that all the other threads will use the
+        "outdated" information until the end of this functions. This
+        is an issue only in very volatile markets.
+
+        NOTE: In the current manager functions we only use quote
+        information, and if we want to increase the pooling service
+        frequency it worth computing only "quotes" in the current code
+        and ignore the others.
+
+        On the other hand, if we are intended to perform more complex
+        operations that require 'trades' or 'bars' information, this
+        code is already optimized for that.
+
+        TODO: FWIU bars information is only updated every minute, so,
+        probably I can create a mechanism to avoid that requests to
+        once per minute only.
+        '''
+
+        if not self.assets:
+            return
+
+        items: list(str) = ['trades', 'quotes', 'bars']
+
+        # Submit all requests at once
+        futures = {
+            self.executor.submit(self.client.get_prices, self.assets, type = item): item
+            for item in items
+        }
+
+        # Finalize requests without the lock taken to override atomically at once
+        results = {
+            future.result()
+            for future in concurrent.futures.as_completed(futures)
+        }
+
+        # Perform the reshape in a temporal variable without the lock taken.
+        # Is I detect that this is slow (or that dealing with self.lock_price
+        # is slow) I will use pandas or numpy instead
+        last_prices = {
+            asset: {
+                item: results.get(item).get(asset) for item in items
+            }
+            for asset in self.assets
+        }
+
+        # Only take the lock to switch values.
         with self.lock_price:
-            self.last_prices = {key: values.get("p") for key, values in prices.items()}
+            self.last_prices = last_prices
 
-
-    def update_positions(self, positions = None):
+    def update_positions(self, positions):
 
         if positions is None:
             positions = self.client.get_positions()
@@ -70,12 +131,14 @@ class AlpacaAPIWrapper:
         self.cash = float(self.client.get_account().get("cash"))
 
     def manage_buy_signal(self, ticker):
-        price: float = self.last_prices.get()
-        qty = self.cash / price;
 
-        self.client.place_order(ticker, qty, "buy")
+        ticket_price_info = {}
+        with self.lock_price:
+            ticket_price_info = self.last_prices.get(ticker).get("quote")
 
-        self.cash -= qty * price
+        qty = self.cash / ticket_price_info.get("quote");
+
+        return self.client.place_order(ticker, qty, "buy")
 
 
     def manage_sell_signal(self, ticker):
@@ -85,4 +148,4 @@ class AlpacaAPIWrapper:
         self.lock_price.release()
 
         if qty > 0:
-            self.client.place_order(ticker, qty, "sell")
+            return self.client.place_order(ticker, qty, "sell")

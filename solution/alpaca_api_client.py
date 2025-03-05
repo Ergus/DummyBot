@@ -155,8 +155,17 @@ class AlpacaAPIClient:
             self.logger.error(f"Failed to place order for {symbol}: {str(e)}")
             return None
 
-    def get_prices(self, assets):
+    def get_prices(self, assets, type='trades'):
         """Get latest prices for the assets."""
+
+        allowed_values = ['trades', 'quotes', 'bars']
+
+        if type not in allowed_values:
+            raise ValueError(
+                f"Invalid input: '{type}'. "
+                f"Allowed values are: {', '.join(allowed_values)}"
+            )
+
         if len(assets) == 0:
             return {}
         try:
@@ -169,4 +178,3 @@ class AlpacaAPIClient:
         except Exception as e:
             self.logger.error(f"Failed to get asset prices: {str(e)}")
             return None
-

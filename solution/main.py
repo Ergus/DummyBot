@@ -2,9 +2,11 @@ import redis
 import queue
 import os
 import logging
-import threading
 import alpaca_api_wrapper
 import time
+from concurrent.futures import ThreadPoolExecutor
+
+from typing import Final
 
 # Configure logging
 logging.basicConfig(
@@ -14,6 +16,7 @@ logging.basicConfig(
 )
 
 signal_queue = queue.Queue()
+
 
 def redis_reader():
     redis_client = redis.Redis(
@@ -56,9 +59,19 @@ def pooling(client: alpaca_api_wrapper.AlpacaAPIWrapper):
     logger = logging.getLogger('worker')
     logger.info("Pooling...")
 
+    pooltime: Final[float] = 1.0
+
     while True:
+        tstart = time.perf_counter()
         client.update_prices()
-        time.sleep(1)
+
+        if (elapsed := time.perf_counter() - tstart) < pooltime:
+            # TODO: use elapsed time to collect some statistics.
+
+            # Use elapsed time for more acurated timer
+            time.sleep(pooltime - elapsed)
+        else:
+            logger.warning(f"Elapsed time to update_prices was: elapsed (< {pooltime})")
 
 
 def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper):
@@ -78,24 +91,23 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper):
 
 
 def RunBot():
+    # Create a single threadpool at the module/class level
+    with ThreadPoolExecutor(max_workers=5) as executor:
 
-    client = alpaca_api_wrapper.AlpacaAPIWrapper(
-        os.getenv("ALPACA_API_KEY"),
-        os.getenv("ALPACA_SECRET_KEY")
-    )
+        client = alpaca_api_wrapper.AlpacaAPIWrapper(
+            os.getenv("ALPACA_API_KEY"),
+            os.getenv("ALPACA_SECRET_KEY"),
+            executor
+        )
 
-    client.add_asset("AAPL")
-    client.update_positions()
-    client.update_prices()
+        client.add_asset("NVDA")
+        client.update_positions()
+        client.update_prices()
 
+        executor.submit(pooling, client)
+        executor.submit(redis_reader)
+        executor.submit(worker, client)
 
-    tpooling = threading.Thread(target=pooling, args = (client), name='tPooling')
-    tredis = threading.Thread(target=redis_reader, name='tRedis')
-    tworker = threading.Thread(target=worker, args = (client), name='tWorker')
-
-    tredis.join()
-    tworker.join()
-    tpooling.join()
 
 if __name__ == "__main__":
     #main()
