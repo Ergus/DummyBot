@@ -1,6 +1,8 @@
 import os
 import alpaca_api_client as aaclient
 
+from threading import Lock
+
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
 
@@ -19,6 +21,7 @@ class AlpacaAPIWrapper:
         self.last_prices = {}
         self.assets = set()
         self.cash = 0
+        self.lock_price = Lock()
 
         self.add_asset("AAPL")
         self.update_positions()
@@ -41,7 +44,8 @@ class AlpacaAPIWrapper:
             self.assets = self.assets | set([key for key in self.positions.keys()])
             prices = self.client.get_prices(self.assets).get("trades")
 
-        self.last_prices = {key: values.get("p") for key, values in prices.items()}
+        with self.lock_price:
+            self.last_prices = {key: values.get("p") for key, values in prices.items()}
 
 
     def update_positions(self, positions = None):
@@ -60,3 +64,21 @@ class AlpacaAPIWrapper:
 
     def update_cash(self):
         self.cash = float(self.client.get_account().get("cash"))
+
+    def manage_buy_signal(self, ticker):
+        price: float = self.last_prices.get()
+        qty = self.cash / price;
+
+        self.client.place_order(ticker, qty, "buy")
+
+        self.cash -= qty * price
+
+
+    def manage_sell_signal(self, ticker):
+        self.lock_price.acquire()
+        position = self.positions.get(ticker)
+        qty = position.get("qty") if position else 0
+        self.lock_price.release()
+
+        if qty > 0:
+            self.client.place_order(ticker, qty, "sell")
