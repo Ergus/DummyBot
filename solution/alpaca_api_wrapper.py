@@ -18,18 +18,19 @@ class AlpacaAPIWrapper:
             self,
             api_key: str,
             api_secret: str,
+            assets: list[str],
             thread_pool: concurrent.futures.ThreadPoolExecutor
     ):
+        assert len(assets) > 0
+
         self.client = aaclient.AlpacaAPIClient(api_key, api_secret)
-        self.assets = set()
+        self.assets = assets
 
         self.cash = 0
         self.update_cash()
 
         self.positions = {}
         self.update_positions()
-
-        self.assets = set([key for key in self.positions.keys()])
 
         # Ideally this needs to be an RWLock
         self.lock_price = threading.Lock()
@@ -42,9 +43,6 @@ class AlpacaAPIWrapper:
                 f"LastPrices: {json.dumps(self.last_prices, indent=2)}\n" \
                 f"Assets: {self.assets}\n"\
                 f"Cash: {self.cash}"
-
-    def add_asset(self, symbol: str):
-        self.assets.add(symbol)
 
     def update_prices(self):
         '''This function updated self.last_prices information.
@@ -79,9 +77,6 @@ class AlpacaAPIWrapper:
         probably I can create a mechanism to avoid that requests to
         once per minute only.
         '''
-
-        if not self.assets:
-            return
 
         items: list(str) = ['trades', 'quotes', 'bars']
 

@@ -97,10 +97,10 @@ def RunBot():
         client = alpaca_api_wrapper.AlpacaAPIWrapper(
             os.getenv("ALPACA_API_KEY"),
             os.getenv("ALPACA_SECRET_KEY"),
+            ["NVDA"],
             executor
         )
 
-        client.add_asset("NVDA")
         client.update_positions()
         client.update_prices()
 
