@@ -1,4 +1,4 @@
-version: '3.8'
+#version: '3.8'
 
 services:
   redis:
@@ -12,7 +12,7 @@ services:
       retries: 3
 
   signal_mock:
-    build: 
+    build:
       context: .
       dockerfile: signal_mock/Dockerfile
     environment:
@@ -24,7 +24,7 @@ services:
     command: python main.py
 
   solution:
-    build: 
+    build:
       context: .
       dockerfile: solution/Dockerfile
     environment:
@@ -33,4 +33,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: python main.py
+    volumes:
+      - ./solution/main.py:/app/main.py
+      - ./solution/test_stream.py:/app/test_stream.py
+    command: python -u main.py
+
