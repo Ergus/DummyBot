@@ -1,7 +1,7 @@
 import os
 import alpaca_api_client as aaclient
 
-from threading import Lock
+import threading
 
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
@@ -17,16 +17,20 @@ class AlpacaAPIWrapper:
             os.getenv("ALPACA_API_KEY"),
             os.getenv("ALPACA_SECRET_KEY")
         )
-        self.positions = {}
-        self.last_prices = {}
         self.assets = set()
-        self.cash = 0
-        self.lock_price = Lock()
 
-        self.add_asset("AAPL")
-        self.update_positions()
-        self.update_prices()
+        self.cash = 0
         self.update_cash()
+
+        self.positions = {}
+        self.update_positions()
+
+        self.assets = set([key for key in self.positions.keys()])
+
+        # Ideally this needs to be an RWLock
+        self.lock_price = threading.Lock()
+        self.last_prices = {}
+
 
     def __str__(self):
         return f"Positions: {self.positions}\n" \
@@ -41,7 +45,7 @@ class AlpacaAPIWrapper:
 
         if prices is None:
             # This won't scale well when using many assets.
-            self.assets = self.assets | set([key for key in self.positions.keys()])
+            
             prices = self.client.get_prices(self.assets).get("trades")
 
         with self.lock_price:

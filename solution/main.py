@@ -77,12 +77,16 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper):
                 client.manage_sell_signal(data.get("ticker"))
 
 
-def bot():
+def RunBot():
 
     client = alpaca_api_wrapper.AlpacaAPIWrapper(
         os.getenv("ALPACA_API_KEY"),
         os.getenv("ALPACA_SECRET_KEY")
     )
+
+    client.add_asset("AAPL")
+    client.update_positions()
+    client.update_prices()
 
 
     tpooling = threading.Thread(target=pooling, args = (client), name='tPooling')
@@ -95,4 +99,4 @@ def bot():
 
 if __name__ == "__main__":
     #main()
-    TestFun()
+    RunBot()
