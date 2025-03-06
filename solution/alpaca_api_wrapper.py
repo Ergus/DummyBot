@@ -30,6 +30,7 @@ class AlpacaAPIWrapper:
 
         # The positions and pricess are separated to reduce contention
         # and not lock too much when updating only one of them
+        self.lock_cash = threading.Lock()
         self.cash = 0
 
         self.lock_positions = threading.Lock()
@@ -149,7 +150,8 @@ class AlpacaAPIWrapper:
         So the same comment also applies.
 
         """
-        self.cash = float(self.client.get_account().get("cash"))
+        with self.lock_cash:
+            self.cash = float(self.client.get_account().get("cash"))
 
 
     def manage_buy_signal(self, ticker):

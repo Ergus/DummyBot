@@ -110,7 +110,9 @@ def pooling_check_order(client: alpaca_api_wrapper.AlpacaAPIWrapper, order_info)
             # I know there are many many other status values, but I only
             # handle the simplest ones.
             case "canceled" | "expired" | "rejected":
-                # In this case we only update prices
+                # In this case we only update prices because the order
+                # was canceled, so the positions don't change due to
+                # this order.
                 break
             case "filled" | "partially_filled":
                 client.update_positions()
@@ -170,7 +172,7 @@ def RunBot(nworkers: int):
     because I use 3 threads to update prices.
 
     '''
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=nworkers + 2) as executor:
 
         client = alpaca_api_wrapper.AlpacaAPIWrapper(
             os.getenv("ALPACA_API_KEY"),
