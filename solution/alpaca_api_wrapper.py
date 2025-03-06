@@ -154,7 +154,11 @@ class AlpacaAPIWrapper:
 
         qty = self.cash / seller_price;
 
-        return self.client.place_order(ticker, qty, "buy")
+        # Only buy if I have enough cash
+        if qty > 0:
+            return self.client.place_order(ticker, qty, "buy")
+
+        return None
 
 
     def manage_sell_signal(self, ticker):
@@ -172,3 +176,5 @@ class AlpacaAPIWrapper:
         # Only place the order if I hold some and I bought them cheaper than current price
         if qty > 0 and buyer_price > entry_price:
             return self.client.place_order(ticker, qty, "sell")
+
+        return None
