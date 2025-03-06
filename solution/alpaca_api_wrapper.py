@@ -5,6 +5,8 @@ import threading
 import concurrent.futures
 import json
 
+import pandas as pd
+
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
 
@@ -44,12 +46,40 @@ class AlpacaAPIWrapper:
         self.update_positions()
         self.update_prices()
 
+        self.initial_position = self.get_current_position()
+
+
     def __str__(self):
         with self.lock_price:
             return f"Positions: {json.dumps(self.positions, indent=2)}\n" \
                 f"LastPrices: {json.dumps(self.last_prices, indent=2)}\n" \
                 f"Assets: {self.assets}\n"\
-                f"Cash: {self.cash}"
+                f"Cash: {self.cash}\n"\
+                f"Initial: {self.initial_position}"
+
+
+    def get_current_position(self):
+
+        df = pd.DataFrame(0.0, columns=['qty', 'entry_price', 'current_price'], index=self.assets)
+
+        with self.lock_positions:
+            for asset in self.assets:
+                if (pos := self.positions.get(asset)) is not None:
+                    df.loc[asset, 'qty'] = pos.get('qty')
+                    df.loc[asset, 'entry_price'] = pos.get('entry')
+
+        with self.lock_price:
+            for asset in self.assets:
+                for price in self.last_prices:
+                    df.loc[asset, 'current_price'] = self.last_prices.get(asset).get("quotes").get("ap")
+
+        with self.lock_cash:
+            df.attrs['cash'] = self.cash
+
+        df['total_value'] = df['qty'] * df['current_price']
+
+        return df
+
 
     def update_prices(self):
         """This function updated self.last_prices information.
