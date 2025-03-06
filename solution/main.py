@@ -5,6 +5,8 @@ import logging
 import alpaca_api_wrapper
 import time
 import argparse
+import threading
+import signal
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Final
@@ -17,6 +19,18 @@ logging.basicConfig(
 )
 
 signal_queue = queue.Queue()
+
+# Create a shutdown for the threads
+shutdown_redis = threading.Event()
+
+# Signal handler for graceful shutdown
+def signal_handler(sig, frame):
+    print("\nReceived signal, shutting down...")
+    shutdown_redis.set()  # Notify all threads to exit
+
+# Register signal handler
+signal.signal(signal.SIGINT, signal_handler)  # Handle Ctrl+C
+signal.signal(signal.SIGTERM, signal_handler)  # Handle termination signals
 
 def redis_reader():
     '''This is the thread that is constantly blocked waiting for new signals.
@@ -46,22 +60,25 @@ def redis_reader():
     # But enable temporarily when calling the put.
     # Maybe the redis API does it internally in the C side, but In my
     # experience it is better not thrust
-    while True:
-        # Read new messages from the stream
-        response = redis_client.xread(
-            {'nvda': last_id},
-            block=1000
-        )
+    while not shutdown_redis.is_set():
+        # Read new messages from the stream, If more than one message
+        # arrive, read all of them before check for shutdown condition.
+        while (response := redis_client.xread({'nvda': last_id}, block=1000)):
 
-        if response:
             if len(response) > 1:
                 logger.warning(f"Received {len(response)} signals")
+
             # Update last_id and print new messages
             for stream_name, messages in response:
                 for message_id, data in messages:
                     last_id = message_id
                     logger.info(f"New signal {data}")
                     signal_queue.put(data)
+
+
+    # Shutdown the queue. The get with rise only once the queue is empty
+    signal_queue.shutdown()
+    logger.info("Redis reader finalized")
 
 # ===================================
 
@@ -82,7 +99,9 @@ def pooling_prices(client: alpaca_api_wrapper.AlpacaAPIWrapper):
 
     pooltime: Final[float] = 1.0
 
-    while True:
+    while not shutdown_redis.is_set():
+        # Due to the approximation nature of the implementation we can
+        # stop the pooling as soon as the signal is received.
 
         tstart = time.perf_counter()
         client.update_prices()
@@ -93,6 +112,8 @@ def pooling_prices(client: alpaca_api_wrapper.AlpacaAPIWrapper):
             time.sleep(pooltime - elapsed)
         else:
             logger.warning(f"Elapsed time to update_prices was: elapsed (< {pooltime})")
+
+    logger.info("Pooling service finalized")
 
 
 def pooling_check_order(client: alpaca_api_wrapper.AlpacaAPIWrapper, order_info):
@@ -141,7 +162,11 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper, worker_id: str):
     logger.info("Waiting for signals...")
 
     while True:
-        data = signal_queue.get() # blockingly pop data from the fifo queue
+        try:
+            data = signal_queue.get() # blockingly pop data from the fifo queue
+        except queue.ShutDown:
+            logger.info(f"Worker exiting")
+            break;
 
         logger.info(f"Received new signal {data}")
 
@@ -185,6 +210,8 @@ def RunBot(nworkers: int):
         executor.submit(redis_reader)
         for worker_id in range(nworkers):
             executor.submit(worker, client, worker_id)
+
+        executor.shutdown(wait=True)
 
 
 if __name__ == "__main__":
