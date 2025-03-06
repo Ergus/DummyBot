@@ -21,7 +21,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: python main.py
+    volumes:
+      - ./signal_mock/main.py:/app/main.py
+    command: python -u main.py
 
   solution:
     build:
@@ -30,6 +32,7 @@ services:
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+
     depends_on:
       redis:
         condition: service_healthy
