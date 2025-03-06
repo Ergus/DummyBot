@@ -28,16 +28,19 @@ The code uses 2 helper threads and a configurable number of workers
 (`-w` option in the command line).
 
 1. A pooling service that keeps a cache updated information of the
-interesting assets prices.
+interesting asset prices. (`pooling_prices`)
 
 2. An external listener that keeps checking input signals from
 redis. When a signal arrives this threads copies them into the fifo
-`Queue` where the worker threads are waiting in a blocking call.
+`Queue` where the worker threads are waiting in a blocking
+call. (`redis_reader`)
 
 3. The workers receive the signal information and handle them with the
-proper strategy function.  After the new order is submitted this
-threads also keep checking until the order is filled or canceled. This
-is a design choice at the moment because the orders are `ioc`. But
+proper strategy function. (`worker`)
+
+   After the new order is submitted this threads also keep checking
+until the order is filled or canceled. This is a design choice at the
+moment because the orders are `ioc`. (`pooling_check_order`) But
 otherwise it will be delegated to another pooling service.
 
 At the program beginning an important and potentially heavy
