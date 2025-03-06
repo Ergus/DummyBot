@@ -37,7 +37,6 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ./solution/main.py:/app/main.py
-      - ./solution/test_stream.py:/app/test_stream.py
+      - ./solution:/app
     command: python -u main.py
 
