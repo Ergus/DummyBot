@@ -81,7 +81,7 @@ class AlpacaAPIClient:
         }
 
         params = {**defaults, **kwargs}
-        params["url"] = f"{params["url"]}{endpoint}"
+        params["url"] = f'{params["url"]}{endpoint}'
 
         try:
             # Log the request (but not sensitive data)

@@ -4,9 +4,12 @@ import alpaca_api_client as aaclient
 import threading
 import concurrent.futures
 import json
+
 from types import MethodType
 
 import pandas as pd
+import math
+import logging
 
 class AlpacaAPIWrapper:
     """This is a wrapper class to reduce api calls.
@@ -17,6 +20,8 @@ class AlpacaAPIWrapper:
     protection.
 
     """
+
+    logger = logging.getLogger('alpaca_wrapper')
 
     def __init__(
             self,
@@ -157,7 +162,6 @@ class AlpacaAPIWrapper:
         with self.lock_price:
             self.last_prices = last_prices
 
-
     def get_order_info(self, order_id):
         """Get pos"""
         return self.client.get_order_info(order_id)
@@ -195,11 +199,13 @@ class AlpacaAPIWrapper:
 
     def manage_buy_signal(self, ticker):
         """Function to execute buy operations"""
+        self.logger.info("Manage buy signal")
+
         seller_price = 0
         with self.lock_price:
-            seller_price = self.last_prices.get(ticker).get("quote").get("ap")
+            seller_price = self.last_prices.get(ticker).get("quotes").get("ap")
 
-        qty = self.cash / seller_price;
+        qty = math.floor(self.cash / seller_price);
 
         # Only buy if I have enough cash
         if qty > 0:
@@ -210,6 +216,8 @@ class AlpacaAPIWrapper:
 
     def manage_sell_signal(self, ticker):
         """Function to execute sell operations"""
+        self.logger.info("Manage sell signal")
+
         qty, entry_price = 0.0, 0.0;
         with self.lock_positions:
             if (position := self.positions.get(ticker)):
@@ -218,7 +226,7 @@ class AlpacaAPIWrapper:
 
         buyer_price = 0.0
         with self.lock_price:
-            buyer_price = self.last_prices.get(ticker).get("quote").get("bp")
+            buyer_price = self.last_prices.get(ticker).get("quotes").get("bp")
 
         # Only place the order if I hold some and I bought them cheaper than current price
         if qty > 0 and buyer_price > entry_price:

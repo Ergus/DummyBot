@@ -7,16 +7,19 @@ import time
 import argparse
 import threading
 import signal
+import sys
 
 from concurrent.futures import ThreadPoolExecutor
 from typing import Final
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    filename='strategy_api.log'
+    level=logging.DEBUG,
+    format='%(asctime)s:%(name)s [%(levelname)s] > %(message)s',
+    stream=sys.stdout,
 )
+
+thread_local = threading.local()
 
 signal_queue = queue.Queue()
 
@@ -78,7 +81,7 @@ def redis_reader():
 
     # Shutdown the queue. The get with rise only once the queue is empty
     signal_queue.shutdown()
-    logger.info("Redis reader finalized")
+    logger.debug("Redis reader finalized")
 
 # ===================================
 
@@ -124,31 +127,39 @@ def pooling_check_order(client: alpaca_api_wrapper.AlpacaAPIWrapper, order_info)
     immediately.
 
     '''
+
+    logger = logging.getLogger(thread_local.task_id)
+
     id = order_info.get("id")
 
     while True:
-        match order_info.get("status"):
+        status = order_info.get("status")
+        match status:
             # I know there are many many other status values, but I only
             # handle the simplest ones.
             case "canceled" | "expired" | "rejected":
                 # In this case we only update prices because the order
                 # was canceled, so the positions don't change due to
                 # this order.
+                logger.warning(f"Order {id} was cancelled")
                 break
             case "filled" | "partially_filled":
+                logger.debug(f"Order {id} was filled (maybe partially)")
                 client.update_positions()
                 break
             case "new" | "pending_new":
+                logger.debug(f"Order {id} is pending")
                 # TODO... need some sleep here? However, the
                 # order is immediate, so this loop may only
                 # tale a few iterations.
                 order_info = client.get_order_info(id)
 
         # Finally, in any case update the cash available...
+        logger.info(f"Order {id} is pending")
         client.update_cash()
 
 
-def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper, worker_id: str):
+def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper, worker_id: int):
     '''This is the key strategic function
 
     This function receives a signal from the queue set by the
@@ -158,7 +169,10 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper, worker_id: str):
     But remember, there is a GIL!!!
 
     '''
-    logger = logging.getLogger(f'worker_{worker_id}')
+
+    thread_local.task_id = f'worker-{worker_id}'
+
+    logger = logging.getLogger(thread_local.task_id)
     logger.info("Waiting for signals...")
 
     while True:
@@ -171,23 +185,31 @@ def worker(client: alpaca_api_wrapper.AlpacaAPIWrapper, worker_id: str):
         logger.info(f"Received new signal {data}")
 
         response = None
-        match data.get("direction"):
-            case "b":
-                response = client.manage_buy_signal(data.get("ticker"))
-            case "s":
-                response = client.manage_sell_signal(data.get("ticker"))
-            case _:
-                logger.error("Received wrong direction")
+        try:
+            match data.get("direction"):
+                case "b":
+                    response = client.manage_buy_signal(data.get("ticker"))
+                case "s":
+                    response = client.manage_sell_signal(data.get("ticker"))
+                case _:
+                    logger.error("Received wrong direction")
 
-        if response is not None:
-            # This code could be deployed in another thread, but this
-            # will create more over-subscription and python is already
-            # inefficient enough.
-            # If I were using something else (Rust or C++) then I will
-            # do it
-            # Another alternative is to deploy in a pooling service
-            # depending of the "order_type" and "time_in_force"
-            pooling_check_order(client, response)
+            if response is not None:
+                logger.debug(f"Submitted new order: {response}")
+                # This code could be deployed in another thread, but this
+                # will create more over-subscription and python is already
+                # inefficient enough.
+                # If I were using something else (Rust or C++) then I will
+                # do it
+                # Another alternative is to deploy in a pooling service
+                # depending of the "order_type" and "time_in_force"
+                pooling_check_order(client, response)
+            else:
+                logger.warning("Ignored new order")
+
+        except Exception as e:
+            logger.error(f"Worker error: {str(e)}")
+
 
 def RunBot(nworkers: int):
     '''This is the Bot function
