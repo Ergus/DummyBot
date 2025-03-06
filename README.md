@@ -51,12 +51,13 @@ As we use the alpaca API and I (not sure why) decided not to use the
 Alpaca library for python. This project implements two levels of
 abstractions over the Alpaca API.
 
-1. `AlpacaAPIClient`: This is a direct interface for the alpaca API,
+1. [`AlpacaAPIClient`](./solution/alpaca_api_client.py): This is a direct interface for the alpaca API,
 which submits all the REST requests. In case this project grows, this
 class could be replaced with the official Alpaca API.
 
-2. `AlpacaAPIWrapper`: This is a wrapper class that acts as a
-connector between the user code and `AlpacaAPIClient`. This class
+2. [`AlpacaAPIWrapper`](./solution/alpaca_api_wrapper.py): This is a
+wrapper class that acts as a connector between the user code and
+[`AlpacaAPIClient`](./solution/alpaca_api_client.py). This class
 performs optimizations, protections and checks hidden to the user. It
 caches the prices and position values in order to direct access them
 without network delays. At the same time the class provide the update
@@ -71,4 +72,5 @@ Signals appear in the Redis stream 'nvda' with the following fields:
 - Ticker: NVDA
 - Direction: "b" (buy) or "s" (sell)
 
-Signals are generated randomly during US market hours (9:30 AM - 4:00 PM ET) with a 0.5% probability each second.
+Signals are generated randomly during US market hours (9:30 AM - 4:00
+PM ET) with a 0.5% probability each second.

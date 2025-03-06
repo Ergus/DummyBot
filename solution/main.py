@@ -198,14 +198,14 @@ def RunBot(nworkers: int):
 
     '''
 
-    client = alpaca_api_wrapper.AlpacaAPIWrapper(
-        os.getenv("ALPACA_API_KEY"),
-        os.getenv("ALPACA_SECRET_KEY"),
-        ["NVDA"],
-        executor
-    )
-
     with ThreadPoolExecutor(max_workers=nworkers + 2) as executor:
+
+        client = alpaca_api_wrapper.AlpacaAPIWrapper(
+            os.getenv("ALPACA_API_KEY"),
+            os.getenv("ALPACA_SECRET_KEY"),
+            ["NVDA"],
+            executor
+        )
 
         executor.submit(pooling_prices, client)
         executor.submit(redis_reader)
@@ -214,11 +214,11 @@ def RunBot(nworkers: int):
 
         executor.shutdown(wait=True)
 
-    # Actions befor exiting.
-    final = client.get_current_position().sumarize()
-    initial = client.initial_position().sumarize()
+        # Actions befor exiting.
+        final = client.get_current_position().sumarize()
+        initial = client.initial_position().sumarize()
 
-    print(f"Position change: {final - initial}")
+        print(f"Position change: {final - initial}")
 
 
 if __name__ == "__main__":
