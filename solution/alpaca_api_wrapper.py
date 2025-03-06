@@ -4,6 +4,7 @@ import alpaca_api_client as aaclient
 import threading
 import concurrent.futures
 import json
+from types import MethodType
 
 import pandas as pd
 
@@ -46,6 +47,7 @@ class AlpacaAPIWrapper:
         self.update_positions()
         self.update_prices()
 
+        # Store the initial position in order to determine P&N at the end.
         self.initial_position = self.get_current_position()
 
 
@@ -59,7 +61,7 @@ class AlpacaAPIWrapper:
 
 
     def get_current_position(self):
-
+        "Compute the actual position."
         df = pd.DataFrame(0.0, columns=['qty', 'entry_price', 'current_price'], index=self.assets)
 
         with self.lock_positions:
@@ -77,6 +79,13 @@ class AlpacaAPIWrapper:
             df.attrs['cash'] = self.cash
 
         df['total_value'] = df['qty'] * df['current_price']
+
+
+        # Define a function
+        def sumarize(self):
+            return self['total_value'].sum() + self.attrs['cash']
+
+        df.sumarize = MethodType(sumarize, df)
 
         return df
 

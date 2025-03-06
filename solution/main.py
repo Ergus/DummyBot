@@ -197,14 +197,15 @@ def RunBot(nworkers: int):
     because I use 3 threads to update prices.
 
     '''
-    with ThreadPoolExecutor(max_workers=nworkers + 2) as executor:
 
-        client = alpaca_api_wrapper.AlpacaAPIWrapper(
-            os.getenv("ALPACA_API_KEY"),
-            os.getenv("ALPACA_SECRET_KEY"),
-            ["NVDA"],
-            executor
-        )
+    client = alpaca_api_wrapper.AlpacaAPIWrapper(
+        os.getenv("ALPACA_API_KEY"),
+        os.getenv("ALPACA_SECRET_KEY"),
+        ["NVDA"],
+        executor
+    )
+
+    with ThreadPoolExecutor(max_workers=nworkers + 2) as executor:
 
         executor.submit(pooling_prices, client)
         executor.submit(redis_reader)
@@ -212,6 +213,12 @@ def RunBot(nworkers: int):
             executor.submit(worker, client, worker_id)
 
         executor.shutdown(wait=True)
+
+    # Actions befor exiting.
+    final = client.get_current_position().sumarize()
+    initial = client.initial_position().sumarize()
+
+    print(f"Position change: {final - initial}")
 
 
 if __name__ == "__main__":
