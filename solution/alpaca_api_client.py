@@ -184,3 +184,14 @@ class AlpacaAPIClient:
         except Exception as e:
             self.logger.error(f"Failed to get asset prices: {str(e)}")
             return None
+
+    def get_order_info(self, id):
+        '''Make a request with order info.'''
+        try:
+            return self._make_request(
+                method='GET',
+                endpoint=f'/v2/orders/{id}',
+            )
+        except Exception as e:
+            self.logger.error(f"Failed to get order info: {str(e)}")
+            return None

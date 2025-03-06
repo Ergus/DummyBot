@@ -117,6 +117,11 @@ class AlpacaAPIWrapper:
         with self.lock_price:
             self.last_prices = last_prices
 
+
+    def get_order_info(self, order_id):
+        """Get pos"""
+        return self.client.get_order_info(order_id)
+
     def update_positions(self):
         """This function updates the current position information.
 
@@ -145,6 +150,7 @@ class AlpacaAPIWrapper:
 
         """
         self.cash = float(self.client.get_account().get("cash"))
+
 
     def manage_buy_signal(self, ticker):
         """Function to execute buy operations"""
