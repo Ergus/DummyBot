@@ -148,21 +148,27 @@ class AlpacaAPIWrapper:
 
     def manage_buy_signal(self, ticker):
         """Function to execute buy operations"""
-        ticket_price_info = {}
+        seller_price = 0
         with self.lock_price:
-            ticket_price_info = self.last_prices.get(ticker).get("quote")
+            seller_price = self.last_prices.get(ticker).get("quote").get("ap")
 
-        qty = self.cash / ticket_price_info.get("quote");
+        qty = self.cash / seller_price;
 
         return self.client.place_order(ticker, qty, "buy")
 
 
     def manage_sell_signal(self, ticker):
         """Function to execute sell operations"""
-        self.lock_price.acquire()
-        position = self.positions.get(ticker)
-        qty = position.get("qty") if position else 0
-        self.lock_price.release()
+        qty, entry_price = 0.0, 0.0;
+        with self.lock_positions:
+            if (position := self.positions.get(ticker)):
+                qty = position.get("qty")
+                entry_price = position.get("entry")
 
-        if qty > 0:
+        buyer_price = 0.0
+        with self.lock_price:
+            buyer_price = self.last_prices.get(ticker).get("quote").get("bp")
+
+        # Only place the order if I hold some and I bought them cheaper than current price
+        if qty > 0 and buyer_price > entry_price:
             return self.client.place_order(ticker, qty, "sell")
